@@ -14,6 +14,30 @@ const stCalc = (s) => `<div class="calc">${s}</div>`;
 const stList = (items) => `<ol class="steps-list">${items.map((it) => `<li>${it}</li>`).join('')}</ol>`;
 const stSci = (v) => (v === 0 ? '0' : v.toExponential(2));
 
+/**
+ * Velocidad tangencial del modelo, con la fórmula sustituida (las mismas ecuaciones que methods/rankine.js).
+ */
+function stVelocity(r, model, gamma, R) {
+  if (model === 'lamb-oseen') {
+    if (r < 1e-12) return { v: 0, txt: 'en el eje (r = 0) no hay giro: v = 0', caso: 'r = 0' };
+    const e = Math.exp(-(r * r) / (R * R));
+    return {
+      v: (gamma / (2 * Math.PI * r)) * (1 - e),
+      txt: `Γ/(2πr)·(1 − e^(−r²/R²)) = ${gamma}/(2π·${fmt(r, 2)}) · (1 − e^(−(${fmt(r, 2)}/${R})²)) = ${fmt(gamma / (2 * Math.PI * r), 4)} · ${fmt(1 - e, 5)}`,
+      caso: 'Lamb-Oseen',
+    };
+  }
+  if (r <= R) {
+    return { v: (gamma * r) / (2 * Math.PI * R * R), txt: `Γ·r/(2πR²) = ${gamma}·${fmt(r, 2)}/(2π·${R}²)`, caso: 'r ≤ R (núcleo)' };
+  }
+  return { v: gamma / (2 * Math.PI * r), txt: `Γ/(2πr) = ${gamma}/(2π·${fmt(r, 2)})`, caso: 'r > R (fuera del núcleo)' };
+}
+
+const stModelFormula = (model) =>
+  model === 'lamb-oseen'
+    ? 'v(r) = Γ/(2πr) · (1 − e^(−r²/R²))   (Lamb-Oseen)'
+    : 'v(r) = Γ·r/(2πR²)  si r ≤ R        v(r) = Γ/(2πr)  si r > R   (Rankine)';
+
 /* -------------------------------------------------------------------------
  * Sección 1 — Tabla de diferencias divididas
  * ----------------------------------------------------------------------- */
@@ -24,6 +48,38 @@ function explainDividedDifferences(d) {
   const F = (v) => stNum(v, 5);
   const Rm = (v) => fmt(v, 2);
   const items = [];
+
+  // ¿De dónde salen las mediciones?
+  const gamma = G.gamma;
+  const Rc = G.R;
+  const rMax = 5 * Rc;
+  const spacing = document.getElementById('iSpacing').value;
+  const radiiTxt = {
+    uniform: `equiespaciados: rᵢ = i · r<sub>máx</sub>/(n − 1) = i · ${rMax}/${n - 1} = i · ${fmt(rMax / (n - 1), 3)} m`,
+    chebyshev: `nodos de Chebyshev: rᵢ = r<sub>máx</sub>/2 − (r<sub>máx</sub>/2)·cos((2i + 1)π / (2n)) = ${rMax / 2} − ${rMax / 2}·cos((2i + 1)π / ${2 * n})`,
+    random: 'aleatorios entre 0 y r<sub>máx</sub> (estaciones dispersas), ordenados de menor a mayor',
+  }[spacing];
+  const rowsV = d.points.map((pt, i) => {
+    const m = stVelocity(pt.r, d.model, gamma, Rc);
+    return { i, r: pt.r, ...m, noise: pt.v - m.v, meas: pt.v };
+  });
+  const hasNoise = rowsV.some((x) => Math.abs(x.noise) > 1e-9);
+  const vTable = rowsV
+    .map(
+      (x) => `<tr><td>${x.i}</td><td>${Rm(x.r)}</td><td style="text-align:left">${x.caso}</td>
+        <td style="text-align:left">${x.txt}</td><td>${fmt(x.v, 5)}</td>
+        ${hasNoise ? `<td>${x.noise >= 0 ? '+' : ''}${fmt(x.noise, 4)}</td>` : ''}<td><b>${fmt(x.meas, 5)}</b></td></tr>`,
+    )
+    .join('');
+  items.push(`<b>¿De dónde salen las mediciones?</b> No son datos reales: se calculan con la fórmula del modelo usando
+    Γ = ${gamma} m²/s y R = ${Rc} m (barra superior):
+    ${stCalc(stModelFormula(d.model))}
+    Los radios son ${radiiTxt}, desde 0 hasta r<sub>máx</sub> = 5R = ${rMax} m. Cada medición es v(rᵢ)${hasNoise ? ' más un ruido aleatorio gaussiano de σ = ' + document.getElementById('iNoise').value + ' m/s (simula el error del sensor)' : ''}:
+    <div class="table-wrap mini"><table>
+      <thead><tr><th>i</th><th>rᵢ (m)</th><th style="text-align:left">Caso</th><th style="text-align:left">Sustitución</th><th>v(rᵢ)</th>${hasNoise ? '<th>Ruido</th>' : ''}<th>f[rᵢ] (m/s)</th></tr></thead>
+      <tbody>${vTable}</tbody>
+    </table></div>
+    La última columna es exactamente la columna f[rᵢ] de la tabla de diferencias divididas.`);
 
   items.push(`<b>Columna f[rᵢ] (orden 0):</b> se copian las mediciones del radar tal cual. Por ejemplo
     f[r₀] = v(${Rm(r[0])} m) = ${F(T[0][0])} m/s y f[r₁] = v(${Rm(r[1])} m) = ${F(T[0][1])} m/s.`);
@@ -126,6 +182,46 @@ function explainTrajConvergence(d) {
   const refName = d.hasExact ? 'exacta' : 'de referencia';
   const items = [];
 
+  // ¿De dónde sale f(t, y) y la solución exacta?
+  const P = d.params;
+  const [x0, y0] = fs.y0;
+  const r0 = Math.hypot(x0, y0);
+  const vt = stVelocity(r0, P.model, P.gamma, P.R);
+  const vr = -P.inflow * r0 * Math.exp(-r0 / P.R);
+  const c = x0 / r0;
+  const s = y0 / r0;
+  const u = vr * c - vt.v * s;
+  const w = vr * s + vt.v * c;
+  let exactTxt;
+  if (d.hasExact) {
+    const th0 = Math.atan2(y0, x0);
+    const at = (t) => [r0 * Math.cos(th0 + d.omega * t), r0 * Math.sin(th0 + d.omega * t)];
+    const ph = at(fs.h);
+    const pf = at(tf);
+    exactTxt = `<b>Solución exacta:</b> sin succión el viento sólo es tangencial, así que la partícula gira en un círculo de
+      radio r₀ con velocidad angular constante:
+      ${stCalc(`ω = v(r₀)/r₀ = ${fmt(vt.v, 4)} / ${fmt(r0, 2)} = <b>${fmt(d.omega, 5)} rad/s</b>   (una vuelta tarda 2π/ω = ${fmt(d.period, 2)} s)<br>
+        x(t) = r₀·cos(θ₀ + ωt),   y(t) = r₀·sin(θ₀ + ωt),   θ₀ = atan2(y₀, x₀) = ${fmt(th0, 4)} rad<br>
+        t = h = ${fmt(fs.h, 4)} s:  (${fmt(r0, 2)}·cos(${fmt(th0 + d.omega * fs.h, 5)}), ${fmt(r0, 2)}·sin(${fmt(th0 + d.omega * fs.h, 5)})) = <b>${stVec(ph)}</b><br>
+        t = ${tf} s:  (${fmt(r0, 2)}·cos(${fmt(th0 + d.omega * tf, 4)}), ${fmt(r0, 2)}·sin(${fmt(th0 + d.omega * tf, 4)})) = <b>${stVec(pf, 2)}</b>`)}
+      Estas son las posiciones contra las que se miden los errores.`;
+  } else {
+    exactTxt = `<b>Sin solución exacta:</b> con succión la partícula cae en espiral y no hay una fórmula cerrada; se usa como
+      referencia RK4 con un paso 64 veces más pequeño (h = ${fmt(Math.min(P.h / 64, 0.01), 5)} s).`;
+  }
+  items.push(`<b>¿De dónde sale f(t, y)?</b> Es la velocidad del viento del modelo en la posición de la partícula
+    (Γ = ${P.gamma} m²/s, R = ${P.R} m). Se calcula el radio, la velocidad tangencial v(r) y la de succión v<sub>r</sub>,
+    y se pasan a componentes x, y:
+    ${stCalc(`${stModelFormula(P.model)}<br>
+      v<sub>r</sub>(r) = −k·r·e^(−r/R)  (succión hacia el embudo, k = ${P.inflow})<br>
+      f(x, y) = ( v<sub>r</sub>·x/r − v(r)·y/r ,  v<sub>r</sub>·y/r + v(r)·x/r )`)}
+    En el punto inicial y₀ = ${stVec(fs.y0)}:
+    ${stCalc(`r₀ = √(${fmt(x0, 2)}² + ${fmt(y0, 2)}²) = ${fmt(r0, 4)} m   (${vt.caso})<br>
+      v(r₀) = ${vt.txt} = <b>${fmt(vt.v, 4)} m/s</b><br>
+      v<sub>r</sub>(r₀) = −${P.inflow}·${fmt(r0, 2)}·e^(−${fmt(r0, 2)}/${P.R}) = ${fmt(vr, 4)} m/s<br>
+      f(0, y₀) = (${fmt(vr, 4)}·${fmt(c, 4)} − ${fmt(vt.v, 4)}·${fmt(s, 4)} ,  ${fmt(vr, 4)}·${fmt(s, 4)} + ${fmt(vt.v, 4)}·${fmt(c, 4)}) = <b>${stVec([u, w])}</b>`)}
+    Ese es el k₁ que usan los tres métodos en el primer paso.<br>${exactTxt}`);
+
   items.push(`<b>Cada fila es una simulación completa.</b> En la primera fila h = ${fmt(fs.h, 4)} s, así que para llegar a
     t = ${tf} s se dan N = ${tf} / ${fmt(fs.h, 4)} = <b>${R.rk4.steps} pasos</b>. En cada paso Euler evalúa la velocidad del
     viento f una vez (${R.euler.evaluations} evaluaciones en total), Heun dos (${R.heun.evaluations}) y RK4 cuatro
@@ -193,6 +289,36 @@ function explainCirculation(d) {
   const trap = (h / 2) * sumT;
   const simp = (h / 3) * sumS;
   const items = [];
+
+  // ¿De dónde sale el integrando y el valor exacto?
+  const gamma = G.gamma;
+  const Rc = G.R;
+  const s1 = d.nodes[1].s;
+  const coef = (2 * gamma) / (Rc * Rc);
+  let integrandTxt;
+  let exactDerivation;
+  if (d.model === 'rankine') {
+    const sOut = d.nodes.find((p) => p.s > Rc);
+    integrandTxt = stCalc(`ζ(s) = Γ/(πR²) si s ≤ R,   ζ(s) = 0 si s > R   (toda la vorticidad está en el núcleo)<br>
+      f(s) = 2πs·ζ(s) = 2Γs/R² = ${2 * gamma}·s/${Rc}²  si s ≤ R,   0 si s > R<br>
+      f(s₁) = f(${fmt(s1, 3)}) = ${s1 <= Rc ? `${2 * gamma}·${fmt(s1, 3)}/${Rc * Rc} = <b>${fmt(coef * s1, 4)}</b>` : '<b>0</b> (fuera del núcleo)'}
+      ${sOut ? `<br>f(${fmt(sOut.s, 3)}) = <b>0</b> porque ${fmt(sOut.s, 3)} > R = ${Rc}` : ''}`);
+    exactDerivation = stCalc(`Γ(r) = ∫₀ʳ 2Γs/R² ds = Γ·r²/R²   si r ≤ R<br>
+      Γ(r) = ∫₀ᴿ 2Γs/R² ds + ∫ᴿʳ 0 ds = Γ   si r > R`);
+  } else {
+    const e1 = Math.exp(-(s1 * s1) / (Rc * Rc));
+    integrandTxt = stCalc(`ζ(s) = Γ/(πR²) · e^(−s²/R²)   (vorticidad gaussiana de Lamb-Oseen)<br>
+      f(s) = 2πs·ζ(s) = (2Γ/R²) · s · e^(−s²/R²) = ${fmt(coef, 4)} · s · e^(−s²/${Rc * Rc})<br>
+      f(s₁) = f(${fmt(s1, 3)}) = ${fmt(coef, 4)} · ${fmt(s1, 3)} · e^(−(${fmt(s1, 3)}/${Rc})²) = ${fmt(coef * s1, 4)} · ${fmt(e1, 5)} = <b>${fmt(coef * s1 * e1, 4)}</b>`);
+    exactDerivation = stCalc(`Γ(r) = ∫₀ʳ (2Γ/R²)·s·e^(−s²/R²) ds,   cambio de variable w = s²/R²,  dw = (2s/R²) ds<br>
+      Γ(r) = Γ·∫₀^(r²/R²) e^(−w) dw = Γ·[−e^(−w)]₀^(r²/R²) = <b>Γ·(1 − e^(−r²/R²))</b>`);
+  }
+  items.push(`<b>¿De dónde sale la función que se integra?</b> Del teorema de Stokes: la circulación dentro de un círculo de
+    radio r es la integral de la vorticidad ζ (cuánto "gira" el aire en cada punto) sobre el área del círculo. En coordenadas
+    polares el área de un anillo es 2πs·ds, así que Γ(r) = ∫₀ʳ 2πs·ζ(s) ds. Con Γ = ${gamma} m²/s y R = ${Rc} m:
+    ${integrandTxt}
+    <b>El valor exacto</b> se obtiene integrando a mano la misma función:
+    ${exactDerivation}`);
 
   const inTable = d.convergence.some((c) => c.n === n);
   items.push(`<b>Cada fila usa n subintervalos de ancho h = r / n.</b> Con el n elegido: h = ${fmt(d.rOut, 2)} / ${n} =
@@ -266,6 +392,17 @@ function explainNewton(d, active, tol) {
   const uNew = it.xNew / R;
   const items = [];
 
+  items.push(`<b>¿De dónde sale la ecuación f(u) = 0?</b> Se quiere el radio donde la velocidad de Lamb-Oseen es máxima,
+    es decir, donde su derivada vale cero:
+    ${stCalc(`v(r) = Γ/(2πr) · (1 − e^(−r²/R²))<br>
+      v′(r) = Γ/(2π) · [ −(1 − e^(−r²/R²))/r² + (2/R²)·e^(−r²/R²) ] = 0<br>
+      se multiplica por r² y se usa u = r/R:   −1 + e^(−u²) + 2u²·e^(−u²) = 0<br>
+      <b>f(u) = (1 + 2u²)·e^(−u²) − 1 = 0</b>`)}
+    La derivada que necesita Newton se obtiene con la regla del producto:
+    ${stCalc(`f′(u) = 4u·e^(−u²) + (1 + 2u²)·(−2u)·e^(−u²) = 2u·(2 − 1 − 2u²)·e^(−u²) = <b>2u(1 − 2u²)·e^(−u²)</b>`)}
+    Γ se cancela, así que el radio del pico sólo depende de R. El punto de partida r₀ = ${fmt(d.u0 * R, 2)} m es el valor del
+    control "Aproximación inicial" (u₀ = r₀/R = ${fmt(d.u0, 4)}).`);
+
   items.push(`<b>Qué es cada fila:</b> una iteración. Se trabaja con u = r/R (R = ${R} m) para que la ecuación no dependa del
     tamaño del tornado; las columnas en metros sólo multiplican u por R. 👉 <b>Haz clic en una fila</b> (o usa "Ver
     iteración siguiente") para explicarla. Ahora se explica la fila <b>k = ${k}</b>.`);
@@ -294,6 +431,16 @@ function explainNewton(d, active, tol) {
   items.push(`<b>Velocidad de convergencia:</b> los errores de la última columna, fila por fila:
     ${stCalc(errs)}
     ${quadratic ? 'Cerca de la raíz cada error es aproximadamente el cuadrado del anterior (multiplicado por una constante): el exponente casi se <b>duplica</b> en cada fila. Eso es la convergencia cuadrática de Newton.' : 'Aquí no se ve la convergencia cuadrática: el método falló o fue hacia la raíz múltiple r = 0, donde sólo converge linealmente.'}`);
+
+  if (quadratic) {
+    const us = d.newton.rootU;
+    const rs = d.newton.root;
+    const e = Math.exp(-us * us);
+    const gamma = G.gamma;
+    items.push(`<b>Velocidad máxima:</b> se sustituye el r* encontrado en la fórmula de la velocidad:
+      ${stCalc(`v(r*) = Γ/(2πr*) · (1 − e^(−u*²)) = ${gamma}/(2π·${fmt(rs, 4)}) · (1 − e^(−${fmt(us, 6)}²)) = ${fmt(gamma / (2 * Math.PI * rs), 4)} · ${fmt(1 - e, 5)} = <b>${fmt(d.vMax, 3)} m/s</b> (${(d.vMax * 3.6).toFixed(0)} km/h)<br>
+        Rankine (pico en r = R): v(R) = Γ/(2πR) = ${gamma}/(2π·${R}) = ${fmt(d.rankine.vPeak, 3)} m/s`)}`);
+  }
 
   return stList(items);
 }
