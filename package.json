@@ -1,0 +1,17 @@
+{
+  "name": "tornado-expo",
+  "version": "1.0.0",
+  "description": "Herramienta visual para explicar métodos numéricos usando un modelo simplificado de tornado (vórtice de Rankine / Lamb-Oseen).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node --test test/"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "chart.js": "^4.6.1",
+    "express": "^5.3.0",
+    "leaflet": "^1.9.4"
+  }
+}

@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tornado Expo · Métodos Numéricos</title>
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="/vendor/chart.js/chart.umd.js"></script>
+  <script src="/vendor/leaflet/leaflet.js"></script>
+</head>
+<body>
+  <header class="hero">
+    <canvas id="heroCanvas"></canvas>
+    <div class="hero-content">
+      <p class="eyebrow">Métodos Numéricos · Exposición final</p>
+      <h1>Anatomía numérica de un <span class="accent">tornado</span></h1>
+      <p class="lead">
+        Usamos un modelo simplificado — el <strong>vórtice de Rankine</strong> — para demostrar
+        empíricamente cómo interpolación, integración, EDOs y raíces resuelven problemas reales.
+        Todos los algoritmos están programados a mano en el backend (Node.js).
+      </p>
+      <nav class="toc">
+        <a href="#s0"><span>EF</span> Simulador en el mapa</a>
+        <a href="#s1"><span>III</span> Perfil del viento</a>
+        <a href="#s2"><span>V</span> Trayectoria</a>
+        <a href="#s3"><span>IV</span> Circulación</a>
+        <a href="#s4"><span>I</span> Velocidad máxima</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Parámetros globales -->
+  <section class="global-params" id="params">
+    <div class="container">
+      <div class="params-top">
+        <h2>🌪️ Parámetros del tornado</h2>
+        <div class="ef-picker" id="efPickerGlobal" aria-label="Selecciona la intensidad del tornado"></div>
+      </div>
+      <div class="param-grid">
+        <label>Circulación total Γ (m²/s)
+          <input type="range" id="gGamma" min="1000" max="120000" step="100" value="22000" />
+          <output id="gGammaOut"></output>
+        </label>
+        <label>Radio del núcleo R (m)
+          <input type="range" id="gR" min="10" max="200" step="5" value="50" />
+          <output id="gROut"></output>
+        </label>
+        <div class="formula-card">
+          <div class="formula">
+            v(r) = <span class="frac"><span>Γ r</span><span>2π R²</span></span> si r ≤ R &nbsp;·&nbsp;
+            v(r) = <span class="frac"><span>Γ</span><span>2π r</span></span> si r &gt; R
+          </div>
+          <div class="muted">Velocidad máxima Rankine: <b id="gVmax"></b> en r = R
+            (<span id="gCategory"></span>)</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <main class="container">
+    <!-- ================= SIMULADOR EF ================= -->
+    <section class="unit sim" id="s0">
+      <div class="unit-head">
+        <span class="badge gold">Simulador · Escala Fujita Mejorada</span>
+        <h2>🗺️ ¿Cómo sería un tornado EF0–EF5 aquí?</h2>
+        <p>Elige la intensidad y el lugar. El tornado se desplaza con una trayectoria calculada con <b>RK4</b>,
+          su intensidad crece y decae, y el área dañada se integra con <b>Simpson 1/3</b>. Coloca tu 🏠 en el mapa
+          para saber qué viento recibiría. Al elegir una categoría también se actualizan Γ y R en todas las secciones.</p>
+      </div>
+
+      <div class="ef-picker big" id="efPicker" aria-label="Selecciona la intensidad del tornado"></div>
+
+      <div class="sim-layout">
+        <div class="map-wrap">
+          <div id="map"></div>
+          <div class="map-toolbar">
+            <select id="simPlace" title="Lugar">
+              <option value="35.3395,-97.4867">Moore, Oklahoma (EUA)</option>
+              <option value="29.3232,-100.9522">Ciudad Acuña, Coahuila</option>
+              <option value="25.6866,-100.3161">Monterrey, Nuevo León</option>
+              <option value="19.4326,-99.1332">Ciudad de México</option>
+              <option value="20.6597,-103.3496">Guadalajara, Jalisco</option>
+            </select>
+            <select id="simHeading" title="Dirección de avance">
+              <option value="0">Hacia el N ↑</option>
+              <option value="45" selected>Hacia el NE ↗</option>
+              <option value="90">Hacia el E →</option>
+              <option value="135">Hacia el SE ↘</option>
+              <option value="180">Hacia el S ↓</option>
+              <option value="225">Hacia el SO ↙</option>
+              <option value="270">Hacia el O ←</option>
+              <option value="315">Hacia el NO ↖</option>
+            </select>
+            <button class="btn" id="simPlay">▶ Simular</button>
+            <button class="btn ghost" id="simHouse">🏠 Casa en la trayectoria</button>
+            <label class="follow-chk"><input type="checkbox" id="simFollow" checked /> 🎥 Seguir</label>
+          </div>
+          <div class="map-hint">Clic en el mapa: mover el punto de contacto 🌪️ · Arrastra la 🏠</div>
+          <div class="map-clock" id="simClock">t = 0:00</div>
+          <div class="sim-error" id="simError" role="alert" hidden></div>
+        </div>
+
+        <aside class="sim-side">
+          <div class="ef-card" id="efCard"></div>
+          <div class="house-card" id="houseCard"></div>
+        </aside>
+      </div>
+
+      <div class="sim-timeline">
+        <label>Línea de tiempo <output id="simTimeOut"></output>
+          <input type="range" id="simTime" min="0" max="1000" value="1000" />
+        </label>
+      </div>
+
+      <div class="metrics" id="simMetrics"></div>
+
+      <div class="grid-2">
+        <div class="chart-box"><canvas id="chartHouse"></canvas></div>
+        <div class="chart-box"><canvas id="chartIntensity"></canvas></div>
+      </div>
+
+      <details>
+        <summary>📐 Área dañada por categoría (Simpson 1/3 vs Trapecio)</summary>
+        <div class="table-wrap" id="simAreaTable"></div>
+        <p class="muted small">A = ∫₀ᵀ [w<sub>izq</sub>(t) + w<sub>der</sub>(t)] · V<sub>t</sub> dt, con 400 subintervalos.
+          El ancho w(t) es el radio donde el viento sobre el suelo supera el umbral de cada nivel EF.</p>
+      </details>
+      <details>
+        <summary>🧠 ¿Qué se está calculando?</summary>
+        <div class="theory">
+          <p><b>Trayectoria (EDO, RK4):</b> x′ = V<sub>t</sub> cos θ, y′ = V<sub>t</sub> sin θ, θ′ = κ(t). κ(t) agrega un
+            serpenteo suave y un giro a la izquierda en la fase de disipación, algo que se observa con frecuencia en tornados reales.</p>
+          <p><b>Viento sobre el suelo:</b> vórtice de Rankine + traslación V<sub>t</sub> (acoplada a la intensidad local del
+            vórtice, para que lejos del tornado no haya viento extra). En el hemisferio norte el giro es antihorario, así que
+            <em>del lado derecho</em> de la trayectoria las velocidades se suman. Por eso la franja de daño es asimétrica.</p>
+          <p><b>Intensidad:</b> Γ(t) = Γ<sub>máx</sub> · sin(πt/T)<sup>0.6</sup>: el tornado nace, madura y se disipa.</p>
+          <p><b>Área dañada (Simpson):</b> es la integral del ancho de la franja a lo largo del tiempo. El integrando cambia
+            bruscamente cuando el viento cruza un umbral, así que Simpson y Trapecio dan casi lo mismo: la ventaja de
+            Simpson aparece sólo con integrandos suaves.</p>
+          <p class="small">⚠️ Modelo didáctico simplificado: no es un pronóstico real.</p>
+        </div>
+      </details>
+    </section>
+    <!-- ================= SECCIÓN 1 ================= -->
+    <section class="unit" id="s1">
+      <div class="unit-head">
+        <span class="badge">Unidad III</span>
+        <h2>1 · El perfil del viento — Interpolación</h2>
+        <p>Un radar Doppler mide la velocidad tangencial sólo en algunos radios. ¿Cómo reconstruimos el perfil
+          completo? Comparamos <b>Lagrange</b>, <b>Newton (diferencias divididas)</b>, un <b>spline cúbico natural</b>
+          y un ajuste por <b>mínimos cuadrados</b>.</p>
+      </div>
+      <div class="layout">
+        <aside class="controls">
+          <label>Número de mediciones <output id="iNOut"></output>
+            <input type="range" id="iN" min="3" max="21" value="7" />
+          </label>
+          <label>Distribución de los radios
+            <select id="iSpacing">
+              <option value="uniform">Equiespaciados</option>
+              <option value="chebyshev">Nodos de Chebyshev</option>
+              <option value="random">Aleatorios (estaciones dispersas)</option>
+            </select>
+          </label>
+          <label>Ruido del sensor σ (m/s) <output id="iNoiseOut"></output>
+            <input type="range" id="iNoise" min="0" max="10" step="0.5" value="0" />
+          </label>
+          <label>Modelo de vórtice
+            <select id="iModel">
+              <option value="rankine">Rankine (pico en r = R)</option>
+              <option value="lamb-oseen">Lamb-Oseen (suave)</option>
+            </select>
+          </label>
+          <label>Grado de mínimos cuadrados <output id="iDegOut"></output>
+            <input type="range" id="iDeg" min="1" max="10" value="4" />
+          </label>
+          <label>Radio a estimar r* (m) <output id="iQOut"></output>
+            <input type="range" id="iQ" min="0" max="250" step="1" value="75" />
+          </label>
+          <button class="btn ghost" id="iReseed">🎲 Nuevas mediciones</button>
+          <div class="toggles">
+            <label class="chk"><input type="checkbox" id="showLag" checked /> Lagrange</label>
+            <label class="chk"><input type="checkbox" id="showNew" /> Newton</label>
+            <label class="chk"><input type="checkbox" id="showSpl" checked /> Spline</label>
+            <label class="chk"><input type="checkbox" id="showReg" /> Mínimos cuadrados</label>
+          </div>
+        </aside>
+        <div class="content">
+          <div class="chart-box tall"><canvas id="chartInterp"></canvas></div>
+          <div class="metrics" id="interpMetrics"></div>
+          <div class="callout" id="interpInsight"></div>
+          <details>
+            <summary>📐 Tabla de diferencias divididas de Newton</summary>
+            <div class="table-wrap" id="ddTable"></div>
+          </details>
+          <details>
+            <summary>🧠 Teoría</summary>
+            <div class="theory">
+              <p><b>Lagrange:</b> P(x) = Σ yᵢ Lᵢ(x), con Lᵢ(x) = Π<sub>j≠i</sub> (x − xⱼ)/(xᵢ − xⱼ).</p>
+              <p><b>Newton:</b> P(x) = f[x₀] + f[x₀,x₁](x − x₀) + f[x₀,x₁,x₂](x − x₀)(x − x₁) + … — es el
+                <em>mismo</em> polinomio que Lagrange (unicidad del polinomio interpolante), pero se evalúa con Horner y
+                permite agregar puntos sin recalcular todo.</p>
+              <p><b>Error:</b> f(x) − P(x) = f<sup>(n+1)</sup>(ξ)/(n+1)! · Π(x − xᵢ). En el núcleo de Rankine la derivada
+                no existe en r = R, por eso un polinomio de grado alto oscila (fenómeno de Runge). Los nodos de Chebyshev
+                minimizan Π(x − xᵢ) y los splines usan polinomios cúbicos por tramos.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SECCIÓN 2 ================= -->
+    <section class="unit star" id="s2">
+      <div class="unit-head">
+        <span class="badge gold">Unidad V · ⭐ Joya de la corona</span>
+        <h2>2 · La trayectoria de una partícula — EDOs</h2>
+        <p>Soltamos una partícula de aire y resolvemos el sistema
+          <code>dx/dt = u(x, y)</code>, <code>dy/dt = v(x, y)</code>. Sin entrada radial, la solución exacta es
+          un <b>círculo</b>: cualquier desviación es error numérico puro.</p>
+      </div>
+      <div class="layout">
+        <aside class="controls">
+          <label>Paso de tiempo h (s) <output id="tHOut"></output>
+            <input type="range" id="tH" min="0.05" max="3" step="0.05" value="0.5" />
+          </label>
+          <label>Tiempo de simulación (s) <output id="tTfOut"></output>
+            <input type="range" id="tTf" min="10" max="300" step="5" value="60" />
+          </label>
+          <label>Posición inicial x₀ (m) <output id="tX0Out"></output>
+            <input type="range" id="tX0" min="10" max="300" step="5" value="100" />
+          </label>
+          <label>Entrada radial k (succión hacia el embudo) <output id="tInOut"></output>
+            <input type="range" id="tIn" min="0" max="0.2" step="0.005" value="0" />
+          </label>
+          <label>Modelo de vórtice
+            <select id="tModel">
+              <option value="rankine">Rankine</option>
+              <option value="lamb-oseen">Lamb-Oseen</option>
+            </select>
+          </label>
+          <div class="toggles">
+            <label class="chk euler"><input type="checkbox" id="showEuler" checked /> Euler (orden 1)</label>
+            <label class="chk heun"><input type="checkbox" id="showHeun" checked /> Heun / Euler mejorado (orden 2)</label>
+            <label class="chk rk4"><input type="checkbox" id="showRk4" checked /> Runge-Kutta 4 (orden 4)</label>
+          </div>
+          <button class="btn" id="tPlay">▶ Animar partículas</button>
+        </aside>
+        <div class="content">
+          <div class="grid-2">
+            <div class="chart-box square anim-box">
+              <canvas id="animCanvas"></canvas>
+              <div class="anim-label" id="animTime">t = 0.0 s</div>
+            </div>
+            <div class="chart-box square"><canvas id="chartTraj"></canvas></div>
+          </div>
+          <div class="metrics" id="trajMetrics"></div>
+          <div class="callout" id="trajInsight"></div>
+          <div class="grid-2">
+            <div class="chart-box"><canvas id="chartTrajErr"></canvas></div>
+            <div class="chart-box"><canvas id="chartTrajConv"></canvas></div>
+          </div>
+          <details open>
+            <summary>📊 Estudio de convergencia (error final al dividir h entre 2)</summary>
+            <div class="table-wrap" id="convTable"></div>
+            <p class="muted">Orden observado p = log₂(E(h)/E(h/2)). La teoría predice p ≈ 1 (Euler), 2 (Heun) y 4 (RK4).
+              Ojo: con h grande Euler está fuera del <em>régimen asintótico</em> (su error es del tamaño de la órbita) y su
+              orden sólo aparece al reducir mucho h; RK4, en cambio, llega pronto al límite del redondeo de máquina (—).</p>
+          </details>
+          <details>
+            <summary>🧠 Teoría</summary>
+            <div class="theory">
+              <p><b>Euler:</b> yₙ₊₁ = yₙ + h f(tₙ, yₙ). Error global O(h). En un vórtice cada paso sale por la tangente,
+                así que la partícula <em>se escapa en espiral</em>: |r| crece por un factor √(1 + (ωh)²) en cada paso.</p>
+              <p><b>Heun (predictor-corrector):</b> ỹ = yₙ + h f(tₙ, yₙ); yₙ₊₁ = yₙ + (h/2)[f(tₙ, yₙ) + f(tₙ₊₁, ỹ)]. Error O(h²).</p>
+              <p><b>RK4:</b> yₙ₊₁ = yₙ + (h/6)(k₁ + 2k₂ + 2k₃ + k₄). Error O(h⁴): dividir h entre 2 reduce el error
+                ≈ 16 veces, con sólo 4 evaluaciones de f por paso.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SECCIÓN 3 ================= -->
+    <section class="unit" id="s3">
+      <div class="unit-head">
+        <span class="badge">Unidad IV</span>
+        <h2>3 · La circulación del tornado — Integración</h2>
+        <p>Por el teorema de Stokes, la circulación dentro de un radio r es la integral de la vorticidad:
+          <code>Γ(r) = ∫₀ʳ ζ(s) · 2πs ds</code>. La resolvemos con <b>Trapecio</b> y <b>Simpson 1/3</b> y la comparamos
+          con el valor analítico.</p>
+      </div>
+      <div class="layout">
+        <aside class="controls">
+          <label>Subintervalos n (par) <output id="cNOut"></output>
+            <input type="range" id="cN" min="2" max="40" step="2" value="6" />
+          </label>
+          <label>Radio de integración r (m) <output id="cROut"></output>
+            <input type="range" id="cR" min="10" max="400" step="5" value="100" />
+          </label>
+          <label>Modelo de vórtice
+            <select id="cModel">
+              <option value="lamb-oseen">Lamb-Oseen (vorticidad gaussiana, suave)</option>
+              <option value="rankine">Rankine (vorticidad discontinua en R)</option>
+            </select>
+          </label>
+          <div class="toggles">
+            <label class="chk trap"><input type="checkbox" id="showTrap" checked /> Trapecios</label>
+            <label class="chk simp"><input type="checkbox" id="showSimp" checked /> Parábolas de Simpson</label>
+          </div>
+        </aside>
+        <div class="content">
+          <div class="chart-box tall"><canvas id="chartCirc"></canvas></div>
+          <div class="metrics" id="circMetrics"></div>
+          <div class="callout" id="circInsight"></div>
+          <div class="chart-box"><canvas id="chartCircConv"></canvas></div>
+          <details>
+            <summary>📊 Tabla de convergencia</summary>
+            <div class="table-wrap" id="circTable"></div>
+          </details>
+          <details>
+            <summary>🧠 Teoría</summary>
+            <div class="theory">
+              <p><b>Trapecio compuesto:</b> I ≈ (h/2)[f₀ + 2f₁ + … + 2fₙ₋₁ + fₙ]. Error −(b − a)h²f''(ξ)/12 → O(h²).</p>
+              <p><b>Simpson 1/3 compuesto:</b> I ≈ (h/3)[f₀ + 4f₁ + 2f₂ + 4f₃ + … + fₙ]. Ajusta parábolas cada dos
+                subintervalos. Error −(b − a)h⁴f⁽⁴⁾(ξ)/180 → O(h⁴), exacto para cúbicas.</p>
+              <p>Con el modelo de Rankine el integrando tiene un <em>salto</em> en r = R: ninguna fórmula de Newton-Cotes
+                conserva su orden teórico si el salto cae dentro de un subintervalo. ¡Pruébalo!</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SECCIÓN 4 ================= -->
+    <section class="unit" id="s4">
+      <div class="unit-head">
+        <span class="badge">Unidad I · Bonus</span>
+        <h2>4 · El punto de máxima velocidad — Newton-Raphson</h2>
+        <p>En Rankine el máximo está trivialmente en r = R (un pico no diferenciable). En el modelo realista
+          <b>Lamb-Oseen</b>, <code>v(r) = Γ/(2πr)(1 − e^{−r²/R²})</code>, el máximo cumple v'(r) = 0, que con u = r/R se
+          reduce a <code>f(u) = (1 + 2u²)e^{−u²} − 1 = 0</code>.</p>
+      </div>
+      <div class="layout">
+        <aside class="controls">
+          <label>Aproximación inicial r₀ (m) <output id="nR0Out"></output>
+            <input type="range" id="nR0" min="5" max="200" step="1" value="80" />
+          </label>
+          <label>Tolerancia
+            <select id="nTol">
+              <option value="1e-4">10⁻⁴</option>
+              <option value="1e-8">10⁻⁸</option>
+              <option value="1e-12" selected>10⁻¹²</option>
+            </select>
+          </label>
+          <button class="btn ghost" id="nStep">⏭ Ver iteración siguiente</button>
+          <button class="btn ghost" id="nAll">⏩ Ver todas</button>
+          <p class="muted small">💡 Prueba r₀ cerca de 0.707·R (allí f'(u) = 0) o muy lejos del núcleo para ver
+            cómo Newton puede fallar.</p>
+        </aside>
+        <div class="content">
+          <div class="grid-2">
+            <div class="chart-box"><canvas id="chartRootF"></canvas></div>
+            <div class="chart-box"><canvas id="chartRootV"></canvas></div>
+          </div>
+          <div class="metrics" id="rootMetrics"></div>
+          <div class="callout" id="rootInsight"></div>
+          <div class="table-wrap" id="rootTable"></div>
+          <details>
+            <summary>🧠 Teoría</summary>
+            <div class="theory">
+              <p><b>Newton-Raphson:</b> uₖ₊₁ = uₖ − f(uₖ)/f'(uₖ), con f'(u) = 2u(1 − 2u²)e^{−u²}. Geométricamente,
+                seguimos la recta tangente hasta cortar el eje. Convergencia <em>cuadrática</em>: el número de dígitos
+                correctos se duplica en cada iteración.</p>
+              <p><b>Riesgos:</b> si f'(uₖ) ≈ 0 la tangente es casi horizontal y el siguiente punto sale disparado;
+                además u = 0 también es raíz (trivial) de f.</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Modelo simplificado con fines didácticos — no es un pronóstico real. Algoritmos implementados a mano en
+      <code>/methods</code>, servidos por Express en <code>/api</code>.</p>
+  </footer>
+
+  <script src="app.js"></script>
+  <script src="map.js"></script>
+</body>
+</html>
