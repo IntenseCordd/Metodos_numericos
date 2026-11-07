@@ -30,6 +30,27 @@ function rk4Step(f, t, y, h) {
 const STEPPERS = { euler: eulerStep, heun: heunStep, rk4: rk4Step };
 
 /**
+ * Da un solo paso como los métodos de arriba, pero devuelve también las etapas intermedias
+ * (k₁, predictor, k₂, …) para poder mostrarlas en pantalla.
+ */
+function traceStep(method, f, t, y, h) {
+  const k1 = f(t, y);
+  if (method === 'euler') return { k1, y1: add(y, k1, h) };
+  if (method === 'heun') {
+    const pred = add(y, k1, h);
+    const k2 = f(t + h, pred);
+    return { k1, pred, k2, y1: y.map((yi, i) => yi + (h / 2) * (k1[i] + k2[i])) };
+  }
+  if (method === 'rk4') {
+    const k2 = f(t + h / 2, add(y, k1, h / 2));
+    const k3 = f(t + h / 2, add(y, k2, h / 2));
+    const k4 = f(t + h, add(y, k3, h));
+    return { k1, k2, k3, k4, y1: y.map((yi, i) => yi + (h / 6) * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i])) };
+  }
+  throw new Error(`Método desconocido: ${method}`);
+}
+
+/**
  * Integra y' = f(t, y) desde t0 hasta tf con paso h.
  * Devuelve { t: [...], y: [[...], ...], evaluations }.
  */
@@ -55,4 +76,4 @@ function solve(method, f, y0, t0, tf, h) {
   return { t: ts, y: ys, evaluations, h: hh, steps: n };
 }
 
-module.exports = { eulerStep, heunStep, rk4Step, solve, STEPPERS };
+module.exports = { eulerStep, heunStep, rk4Step, traceStep, solve, STEPPERS };

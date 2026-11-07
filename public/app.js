@@ -273,15 +273,18 @@ async function runInterpolation() {
     for (let k = 0; k < tbl.length; k++) html += `<th>${k === 0 ? 'f[rᵢ]' : `Orden ${k}`}</th>`;
     html += '</tr></thead><tbody>';
     for (let i = 0; i < n; i++) {
-      html += `<tr><td>${i}</td><td>${fmt(d.points[i].r, 2)}</td>`;
+      html += `<tr><td>${i}</td><td data-r="${i}">${fmt(d.points[i].r, 2)}</td>`;
       for (let k = 0; k < tbl.length; k++) {
         const v = tbl[k][i];
-        html += `<td${i === 0 ? ' class="good"' : ''}>${v === undefined ? '' : fmt(v, 5)}</td>`;
+        if (v === undefined) html += '<td></td>';
+        else html += `<td data-k="${k}" data-i="${i}"${i === 0 ? ' class="good"' : ''}>${fmt(v, 5)}</td>`;
       }
       html += '</tr>';
     }
     html += '</tbody></table><p class="muted small">La primera fila (en verde) son los coeficientes del polinomio de Newton.</p>';
     $('ddTable').innerHTML = html;
+    $('ddSteps').innerHTML = explainDividedDifferences(d);
+    bindDDTable(d);
   } catch (err) {
     $('interpInsight').className = 'callout warn';
     $('interpInsight').textContent = err.message;
@@ -433,6 +436,7 @@ function renderTrajectory() {
     html += '</tr>';
   }
   $('convTable').innerHTML = `${html}</tbody></table>`;
+  $('convSteps').innerHTML = explainTrajConvergence(d);
 
   drawAnimFrame(animProgress);
 }
@@ -649,6 +653,7 @@ async function runCirculation() {
         <td>${fmt(c.simpError, 3)}</td><td>${c.simpOrder == null ? '—' : c.simpOrder.toFixed(2)}</td></tr>`;
     }
     $('circTable').innerHTML = `${html}</tbody></table><p class="muted small">p = log₂(Eₙ / E₂ₙ). Cuando el error llega a ~10⁻⁹ domina el redondeo y p deja de tener sentido.</p>`;
+    $('circSteps').innerHTML = explainCirculation(d);
   } catch (err) {
     $('circInsight').className = 'callout warn';
     $('circInsight').textContent = err.message;
@@ -759,10 +764,11 @@ function renderRoots() {
   let html = '<table><thead><tr><th>k</th><th>rₖ (m)</th><th>f(uₖ)</th><th>f′(uₖ)</th><th>rₖ₊₁ (m)</th><th>|rₖ₊₁ − rₖ| / R</th></tr></thead><tbody>';
   its.forEach((it, k) => {
     if (k >= shown) return;
-    html += `<tr class="${k === shown - 1 ? 'active' : ''}"><td>${it.k}</td><td>${fmt(it.x, 8)}</td><td>${fmt(it.fx, 6)}</td>
+    html += `<tr data-k="${k}" class="${k === shown - 1 ? 'active' : ''}"><td>${it.k - 1}</td><td>${fmt(it.x, 8)}</td><td>${fmt(it.fx, 6)}</td>
       <td>${fmt(it.dfx, 6)}</td><td>${fmt(it.xNew, 8)}</td><td>${it.error.toExponential(3)}</td></tr>`;
   });
   $('rootTable').innerHTML = `${html}</tbody></table>`;
+  $('rootSteps').innerHTML = explainNewton(d, Math.max(0, shown - 1), Number($('nTol').value));
 }
 
 /* =========================================================================
@@ -814,6 +820,13 @@ $('nStep').addEventListener('click', () => {
 });
 $('nAll').addEventListener('click', () => {
   rootShown = Infinity;
+  renderRoots();
+});
+// Clic en una fila de Newton: se muestran las iteraciones hasta esa fila y se explica
+$('rootTable').addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-k]');
+  if (!tr || !rootData) return;
+  rootShown = Number(tr.dataset.k) + 1;
   renderRoots();
 });
 

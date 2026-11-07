@@ -79,3 +79,12 @@ test('simulador EF: el viento pico coincide con la categoría elegida', () => {
   const far = simulateTornado({ level: 5, house: { x: -50000, y: 50000 } });
   assert.ok(far.house.max * 3.6 < 5, 'lejos del tornado no hay viento extra');
 });
+
+test('traceStep da el mismo resultado que los métodos de EDO', () => {
+  const f = (t, y) => [-y[1] + 0.1 * t, y[0]];
+  for (const m of ['euler', 'heun', 'rk4']) {
+    const a = ode.traceStep(m, f, 0.3, [1, 2], 0.25).y1;
+    const b = ode.STEPPERS[m](f, 0.3, [1, 2], 0.25);
+    assert.deepStrictEqual(a, b);
+  }
+});

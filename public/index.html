@@ -18,7 +18,7 @@
       <p class="lead">
         Usamos un modelo simplificado — el <strong>vórtice de Rankine</strong> — para demostrar
         empíricamente cómo interpolación, integración, EDOs y raíces resuelven problemas reales.
-        Todos los algoritmos están programados a mano en el backend (Node.js).
+          (Node.js).
       </p>
       <nav class="toc">
         <a href="#s0"><span>EF</span> Simulador en el mapa</a>
@@ -193,6 +193,11 @@
           <details>
             <summary>📐 Tabla de diferencias divididas de Newton</summary>
             <div class="table-wrap" id="ddTable"></div>
+            <div class="callout" id="ddCellInfo"></div>
+          </details>
+          <details class="steps">
+            <summary>🪜 Paso a paso: cómo se llena la tabla de diferencias divididas</summary>
+            <div id="ddSteps"></div>
           </details>
           <details>
             <summary>🧠 Teoría</summary>
@@ -267,6 +272,10 @@
               Ojo: con h grande Euler está fuera del <em>régimen asintótico</em> (su error es del tamaño de la órbita) y su
               orden sólo aparece al reducir mucho h; RK4, en cambio, llega pronto al límite del redondeo de máquina (—).</p>
           </details>
+          <details class="steps">
+            <summary>🪜 Paso a paso: cómo se calcula la tabla de convergencia</summary>
+            <div id="convSteps"></div>
+          </details>
           <details>
             <summary>🧠 Teoría</summary>
             <div class="theory">
@@ -318,6 +327,10 @@
             <summary>📊 Tabla de convergencia</summary>
             <div class="table-wrap" id="circTable"></div>
           </details>
+          <details class="steps">
+            <summary>🪜 Paso a paso: cómo se calculan Trapecio, Simpson y la tabla</summary>
+            <div id="circSteps"></div>
+          </details>
           <details>
             <summary>🧠 Teoría</summary>
             <div class="theory">
@@ -366,6 +379,10 @@
           <div class="metrics" id="rootMetrics"></div>
           <div class="callout" id="rootInsight"></div>
           <div class="table-wrap" id="rootTable"></div>
+          <details class="steps">
+            <summary>🪜 Paso a paso: cómo se calcula cada fila de Newton-Raphson</summary>
+            <div id="rootSteps"></div>
+          </details>
           <details>
             <summary>🧠 Teoría</summary>
             <div class="theory">
@@ -386,6 +403,7 @@
       <code>/methods</code>, servidos por Express en <code>/api</code>.</p>
   </footer>
 
+  <script src="steps.js"></script>
   <script src="app.js"></script>
   <script src="map.js"></script>
 </body>

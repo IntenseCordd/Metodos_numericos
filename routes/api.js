@@ -198,6 +198,11 @@ router.post('/trajectory', (req, res) => {
   const refT = linspace(0, tf, 600);
   const refPts = refT.map(refAt);
 
+  // Primer paso de cada método con sus etapas intermedias (para la explicación paso a paso)
+  const hUsed = tf / Math.max(1, Math.round(tf / h));
+  const firstStep = { h: hUsed, y0: [x0, y0], reference: refAt(hUsed) };
+  for (const m of methods) firstStep[m] = ode.traceStep(m, f, 0, [x0, y0], hUsed);
+
   // Estudio de convergencia: error final vs h, h/2, h/4, ...
   const convergence = [];
   for (let k = 0; k < 10; k++) {
@@ -226,6 +231,8 @@ router.post('/trajectory', (req, res) => {
     omega,
     period: hasExact ? (2 * Math.PI) / omega : null,
     reference: { t: refT, x: refPts.map((p) => p[0]), y: refPts.map((p) => p[1]) },
+    refFinal,
+    firstStep,
     results,
     convergence,
   });

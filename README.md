@@ -33,6 +33,7 @@ Tornado_APP/
 ├── public/
 │   ├── index.html
 │   ├── app.js              # llamadas fetch + gráficas + animación
+│   ├── steps.js            # explicaciones "paso a paso" de las tablas, con los números calculados
 │   ├── map.js              # simulador EF en el mapa (Leaflet)
 │   └── styles.css
 └── test/methods.test.js
@@ -49,6 +50,9 @@ Tornado_APP/
 | 4 | I · Raíces (bonus) | Radio de velocidad máxima de Lamb-Oseen | Newton-Raphson vs bisección | Convergencia cuadrática (≈5 iteraciones vs ≈40); fallos con r₀ ≈ 0.707R (f′ = 0) o r₀ lejano; raíz múltiple r = 0 → convergencia lineal |
 
 ## Guion sugerido para la exposición
+
+> Cada tabla tiene debajo un desplegable **🪜 Paso a paso** que reconstruye sus valores con los números actuales.
+> En la tabla de diferencias divididas se puede hacer clic en cualquier celda, y en la de Newton-Raphson en cualquier fila.
 
 0. **Simulador EF**: pulsa **EF5** → el tornado recorre ~48 km de Moore con la cámara siguiéndolo. Luego pulsa
    *Casa en la trayectoria* y repite con **EF1** para comparar. Explica que el lado derecho es más dañino porque
